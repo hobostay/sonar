@@ -1,0 +1,65 @@
+package cmd
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/rkrebs/sonar/internal/display"
+	"github.com/rkrebs/sonar/internal/docker"
+	"github.com/rkrebs/sonar/internal/ports"
+	"github.com/spf13/cobra"
+)
+
+var forceFlag bool
+
+var killCmd = &cobra.Command{
+	Use:   "kill <port>",
+	Short: "Kill the process listening on a given port",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		port, err := strconv.Atoi(args[0])
+		if err != nil {
+			return fmt.Errorf("invalid port: %s", args[0])
+		}
+
+		lp, err := ports.FindByPort(port)
+		if err != nil {
+			return err
+		}
+
+		// Enrich with Docker info to detect containers
+		enriched := []ports.ListeningPort{*lp}
+		docker.EnrichPorts(enriched)
+		*lp = enriched[0]
+
+		if lp.Type == ports.PortTypeDocker {
+			name := lp.DockerContainer
+			if lp.DockerComposeService != "" {
+				name = lp.DockerComposeService
+			}
+			fmt.Printf("%s This is Docker container %s. Consider %s instead.\n",
+				display.Yellow("Warning:"),
+				display.Bold(name),
+				display.Cyan(fmt.Sprintf("docker stop %s", lp.DockerContainer)))
+		}
+
+		sigName := "SIGTERM"
+		if forceFlag {
+			sigName = "SIGKILL"
+		}
+		fmt.Printf("Killing %s (PID %d) on port %d with %s\n",
+			display.Bold(lp.DisplayName()), lp.PID, port, sigName)
+
+		if err := ports.Kill(port, forceFlag); err != nil {
+			return err
+		}
+
+		fmt.Printf("Freed %s\n", display.Underline(lp.URL()))
+		return nil
+	},
+}
+
+func init() {
+	killCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Send SIGKILL instead of SIGTERM")
+	rootCmd.AddCommand(killCmd)
+}
