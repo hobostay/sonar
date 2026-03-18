@@ -13,7 +13,8 @@ Know what's running on your machine.
 
 </div>
 
-Modern dev means juggling multiple worktrees, Docker Compose stacks, detached containers, and background services — all competing for ports on localhost. `lsof -iTCP -sTCP:LISTEN` tells you a port is open; sonar tells you *what's behind it*: which container, which Compose project, how much memory it's eating, and gives you one command to kill it, tail its logs, or shell into it. No more piping `lsof` through `grep` and `awk` to figure out why port 3000 is already taken.
+I was just tired of running `lsof -iTCP -sTCP:LISTEN` tells you a port is open; sonar tells you *what's behind it*: which container, which Compose project, how much memory it's eating, and gives you one command to kill it, tail its logs, or shell into it. No more piping `lsof` through `grep` and `awk` to figure out why port 3000 is already taken.
+
 
 ```
 $ sonar list
@@ -31,7 +32,7 @@ PORT   PROCESS                      CONTAINER                    IMAGE          
 
 - Docker-aware — resolves container names, images, compose services, and port mappings
 - Colored output with clickable URLs
-- Hides desktop apps (Figma, Discord, etc.) by default
+- Hides desktop apps (VS Code, Discord, Spotify etc.) by default
 - Configurable columns, filtering, and sorting
 - JSON output for scripting
 - Log streaming and process attach for Docker and native services
