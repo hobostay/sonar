@@ -13,8 +13,9 @@ Know what's running on your machine.
 
 </div>
 
-I was just tired of running `lsof -iTCP -sTCP:LISTEN` tells you a port is open; sonar tells you *what's behind it*: which container, which Compose project, how much memory it's eating, and gives you one command to kill it, tail its logs, or shell into it. No more piping `lsof` through `grep` and `awk` to figure out why port 3000 is already taken.
+I got tired of running `lsof -iTCP -sTCP:LISTEN | grep ...` every time a port was already taken, then spending another minute figuring out if it was a Docker container or some orphaned dev server from another worktree. So I built sonar.
 
+It shows everything listening on localhost, with Docker container names, Compose projects, resource usage, and clickable URLs. You can kill processes, tail logs, shell into containers, and more — all by port number.
 
 ```
 $ sonar list
@@ -28,28 +29,26 @@ PORT   PROCESS                      CONTAINER                    IMAGE          
 5 ports (4 docker, 1 user)
 ```
 
-## Features
-
-- Docker-aware — resolves container names, images, compose services, and port mappings
-- Colored output with clickable URLs
-- Hides desktop apps (VS Code, Discord, Spotify etc.) by default
-- Configurable columns, filtering, and sorting
-- JSON output for scripting
-- Log streaming and process attach for Docker and native services
-- Port forwarding, real-time watch mode, and more
-
 ## Install
 
 ```sh
 curl -sfL https://raw.githubusercontent.com/raskrebs/sonar/main/install.sh | sh
 ```
 
-This downloads the latest release binary and adds `~/.sonar/bin` to your PATH. Restart your terminal or run `source ~/.zshrc` to start using it.
+Downloads the latest binary and adds `~/.sonar/bin` to your PATH. Restart your terminal or `source ~/.zshrc`.
 
-To customize the install location:
+Custom install location:
 
 ```sh
 curl -sfL https://raw.githubusercontent.com/raskrebs/sonar/main/install.sh | SONAR_INSTALL_DIR=/usr/local/bin sh
+```
+
+Shell completions (tab-complete port numbers):
+
+```sh
+sonar completion zsh > "${fpath[1]}/_sonar"   # zsh
+sonar completion bash > /etc/bash_completion.d/sonar  # bash
+sonar completion fish | source                 # fish
 ```
 
 ## Usage
@@ -62,58 +61,80 @@ sonar list --filter docker     # only Docker ports
 sonar list --sort name         # sort by process name
 sonar list --json              # JSON output
 sonar list -a                  # include desktop apps
-sonar list -c port,compose,image,url  # custom columns
+sonar list -c port,cpu,mem,uptime,state  # custom columns
+sonar list --health            # run HTTP health checks
+sonar list --host user@server  # scan a remote machine via SSH
 ```
 
-By default, sonar hides desktop apps and system services that happen to listen on TCP ports but aren't relevant to development. These include:
+By default, sonar hides desktop apps and system services that listen on TCP ports but aren't relevant to development — things like Figma, Discord, Spotify, ControlCenter, AirPlay, and other macOS `.app` bundles and `/System/Library/` daemons. Use `-a` to include them.
 
-- **macOS `.app` bundles** — apps like Figma, Discord, Spotify, and Slack open local ports for IPC or update checks
-- **macOS system services** — daemons under `/System/Library/` and `/usr/libexec/` (e.g. `rapportd`, `ControlCenter`, `AirPlay`)
-
-Use `-a` / `--all` to include them.
-
-Available columns: `port`, `process`, `pid`, `type`, `url`, `cpu`, `mem`, `threads`, `uptime`, `state`, `connections`, `container`, `image`, `containerport`, `compose`, `project`, `user`, `bind`, `ip`
+Available columns: `port`, `process`, `pid`, `type`, `url`, `cpu`, `mem`, `threads`, `uptime`, `state`, `connections`, `health`, `latency`, `container`, `image`, `containerport`, `compose`, `project`, `user`, `bind`, `ip`
 
 ### Inspect a port
 
 ```sh
-sonar info 6873
+sonar info 3000
 ```
 
-Shows full details: command, user, bind address, Docker container/image/compose info.
+Shows everything about a port: full command, user, bind address, CPU/memory/threads, uptime, health check result, and Docker details if applicable.
 
-### Open in browser
+### Kill processes
 
 ```sh
-sonar open 3000
+sonar kill 3000                            # SIGTERM
+sonar kill 3000 -f                         # SIGKILL
+sonar kill-all --filter docker             # stop all Docker containers
+sonar kill-all --project my-app            # stop a Compose project
+sonar kill-all --filter user -y            # skip confirmation
+```
+
+Docker containers are stopped with `docker stop` instead of sending signals.
+
+### View logs
+
+```sh
+sonar logs 3000
+```
+
+For Docker containers, runs `docker logs -f`. For native processes, discovers log files via `lsof` and tails them. Falls back to macOS `log stream` or Linux `/proc/<pid>/fd`.
+
+### Attach to a service
+
+```sh
+sonar attach 3000                          # shell into Docker container, or TCP connect
+sonar attach 3000 --shell bash             # specific shell
 ```
 
 ### Watch for changes
 
 ```sh
-sonar watch              # poll every 2s
-sonar watch -i 500ms     # poll every 500ms
+sonar watch                                # poll every 2s, show diffs
+sonar watch -i 500ms                       # faster polling
+sonar watch --notify                       # desktop notifications when ports go up/down
+sonar watch --host user@server             # watch a remote machine
 ```
 
-Shows the initial table, then prints diffs as ports come and go.
-
-### View logs
+### Dependency graph
 
 ```sh
-sonar logs 3000          # stream logs from a process
-sonar logs 3000 -f=false # print recent logs without following
+sonar graph                                # show which services talk to each other
+sonar graph --json                         # structured output
+sonar graph --dot                          # Graphviz DOT format
 ```
 
-For Docker containers, streams `docker logs`. For native processes, discovers log files via `lsof` and tails them. Falls back to macOS `log stream` or Linux `/proc/<pid>/fd`.
+Shows established connections between listening ports (e.g. your backend connecting to postgres).
 
-### Attach to a service
+### Profiles
+
+Save a set of expected ports for a project, then check if they're all up or tear them down:
 
 ```sh
-sonar attach 6873              # interactive shell (Docker) or TCP connection
-sonar attach 6873 --shell bash # use a specific shell for Docker exec
+sonar profile create my-app                # snapshot current ports
+sonar profile list                         # list saved profiles
+sonar profile show my-app                  # show profile details
+sonar up my-app                            # check which expected ports are running
+sonar down my-app                          # stop all ports in the profile
 ```
-
-For Docker containers, opens an interactive shell inside the container. For other services, opens a raw TCP connection to the port.
 
 ### Port mapping
 
@@ -121,29 +142,14 @@ For Docker containers, opens an interactive shell inside the container. For othe
 sonar map 6873 3002
 ```
 
-Makes the service on port 6873 available on port 3002. Useful for accessing Docker services on a friendlier port.
+Proxies traffic so the service on port 6873 is also available on port 3002.
 
-### Kill a process
-
-```sh
-sonar kill 3000           # send SIGTERM
-sonar kill 3000 -f        # send SIGKILL
-```
-
-Warns if the port belongs to a Docker container and suggests `docker stop` instead.
-
-### Kill multiple processes
+### Other
 
 ```sh
-sonar kill-all --filter docker              # kill all Docker port processes
-sonar kill-all --project my-app             # kill by Compose project
-sonar kill-all --filter user -y             # skip confirmation
-```
-
-### Global flags
-
-```sh
-sonar --no-color           # disable colored output (also respects NO_COLOR env)
+sonar open 3000                            # open in browser
+sonar tray                                 # system tray with live port list (macOS)
+sonar --no-color                           # disable colors (also respects NO_COLOR env)
 ```
 
 ## Supported platforms
