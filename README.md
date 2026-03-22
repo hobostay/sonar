@@ -46,7 +46,7 @@ curl -sfL https://raw.githubusercontent.com/raskrebs/sonar/main/install.sh | SON
 ### Using Go
 
 ```sh
-go install github.com/RasKrebs/sonar@latest
+go install github.com/raskrebs/sonar@latest
 ```
 
 Shell completions (tab-complete port numbers):
@@ -195,3 +195,11 @@ The `--stats` flag fetches per-process and per-container resource usage. For Doc
 
 - macOS (uses `lsof`)
 - Linux (uses `ss`)
+
+## Contributors
+
+Thanks to everyone who has contributed to sonar!
+
+<a href="https://github.com/RasKrebs/sonar/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=RasKrebs/sonar" />
+</a>
